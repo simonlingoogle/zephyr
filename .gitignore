@@ -111,3 +111,9 @@ SysbuildKconfigBasicNoModules.txt
 TextEncoding.txt
 YAMLLint.txt
 ZephyrModuleFile.txt
+
+# Added by Simon 
+doc/build/
+CMakeFiles/
+CMakeCache.txt
+*.zip
