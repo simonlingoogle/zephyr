@@ -9,7 +9,7 @@
 #include <zephyr/drivers/gpio.h>
 
 /* 1000 msec = 1 sec */
-#define SLEEP_TIME_MS   1000
+#define SLEEP_TIME_MS   500
 
 /* The devicetree node identifier for the "led0" alias. */
 #define LED0_NODE DT_ALIAS(led0)
@@ -25,19 +25,25 @@ int main(void)
 	int ret;
 	bool led_state = true;
 
-	if (!gpio_is_ready_dt(&led)) {
-		return 0;
+	// Wait for GPIO to be ready (simple approach)
+	while (!gpio_is_ready_dt(&led)) {
+		printf("Waiting for GPIO device...\n");
+		k_msleep(100);
 	}
+
+	printf("GPIO device ready\n");
 
 	ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
 	if (ret < 0) {
-		return 0;
+		printf("Failed to configure GPIO: %d\n", ret);
+		return ret;
 	}
 
 	while (1) {
 		ret = gpio_pin_toggle_dt(&led);
 		if (ret < 0) {
-			return 0;
+			printf("Failed to toggle GPIO: %d\n", ret);
+			return ret;
 		}
 
 		led_state = !led_state;
