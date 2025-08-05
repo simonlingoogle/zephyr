@@ -38,8 +38,12 @@ static struct gpio_dt_spec led = GPIO_DT_SPEC_GET_OR(DT_ALIAS(led0), gpios,
 
 void button_pressed(const struct device *dev, struct gpio_callback *cb,
 		    uint32_t pins)
-{
-	printk("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
+{	int val = gpio_pin_get_dt(&button);
+	if (val > 0) {
+		printk("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
+	} else {
+		printk("Button released at %" PRIu32 "\n", k_cycle_get_32());
+	}
 }
 
 int main(void)
@@ -60,7 +64,7 @@ int main(void)
 	}
 
 	ret = gpio_pin_interrupt_configure_dt(&button,
-					      GPIO_INT_EDGE_TO_ACTIVE);
+					      GPIO_INT_EDGE_BOTH);
 	if (ret != 0) {
 		printk("Error %d: failed to configure interrupt on %s pin %d\n",
 			ret, button.port->name, button.pin);
