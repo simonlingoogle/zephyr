@@ -1,0 +1,17 @@
+sample:
+  name: IEEE 802.15.4 Packet Sniffer to Shell
+  description: Capture and display IEEE 802.15.4 packets via shell interface
+tests:
+  sample.802154.sniff_to_shell:
+    tags:
+      - ieee802154
+      - networking
+      - shell
+      - radio
+    filter: dt_chosen_enabled("zephyr,ieee802154")
+    depends_on: ieee802154
+    harness: console
+    timeout: 60
+    integration_platforms:
+      - nrf52840dongle_nrf52840
+      - nrf52840dk_nrf52840

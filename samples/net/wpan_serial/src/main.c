@@ -180,7 +180,7 @@ static void send_data(uint8_t *cfg, uint8_t *data, size_t len)
 		return;
 	}
 
-	LOG_DBG("queue pkt %p len %u", pkt, len);
+	LOG_INF("queue pkt %p len %u", pkt, len);
 
 	/* Add configuration id */
 	net_pkt_write(pkt, cfg, 2);
@@ -275,7 +275,7 @@ static void process_data(struct net_pkt *pkt)
 
 static void set_channel(uint8_t chan)
 {
-	LOG_DBG("Set channel %u", chan);
+	LOG_INF("Set channel %u", chan);
 
 	radio_api->set_channel(ieee802154_dev, chan);
 }
@@ -305,7 +305,7 @@ static void rx_thread(void *p1, void *p2, void *p3)
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
-	LOG_DBG("RX thread started");
+	LOG_INF("RX thread started");
 
 	while (true) {
 		struct net_pkt *pkt;
@@ -315,9 +315,9 @@ static void rx_thread(void *p1, void *p2, void *p3)
 		pkt = k_fifo_get(&rx_queue, K_FOREVER);
 		buf = net_buf_frag_last(pkt->buffer);
 
-		LOG_DBG("rx_queue pkt %p buf %p", pkt, buf);
+		LOG_ERR("rx_queue pkt %p buf %p", pkt, buf);
 
-		LOG_HEXDUMP_DBG(buf->data, buf->len, "SLIP >");
+		LOG_HEXDUMP_ERR(buf->data, buf->len, "SLIP >");
 
 		/* TODO: process */
 		specifier = net_buf_pull_u8(buf);
@@ -396,7 +396,7 @@ static void tx_thread(void *p1, void *p2, void *p3)
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
-	LOG_DBG("TX thread started");
+	LOG_INF("TX thread started");
 
 	while (true) {
 		struct net_pkt *pkt;
@@ -407,7 +407,7 @@ static void tx_thread(void *p1, void *p2, void *p3)
 		buf = net_buf_frag_last(pkt->buffer);
 		len = net_pkt_get_len(pkt);
 
-		LOG_DBG("Send pkt %p buf %p len %d", pkt, buf, len);
+		printf("Send pkt %p buf %p len %d", pkt, buf, len);
 
 		LOG_HEXDUMP_DBG(buf->data, buf->len, "SLIP <");
 
@@ -480,10 +480,12 @@ static bool init_ieee802154(void)
 	    radio_api->get_capabilities(ieee802154_dev)) {
 		struct ieee802154_filter filter;
 		uint16_t short_addr;
+		LOG_INF("IEEE 802.15.4 filter is supported");
 
 		/* Set short address */
 		short_addr = (mac_addr[0] << 8) + mac_addr[1];
 		filter.short_addr = short_addr;
+		LOG_INF("Set short address %04x", short_addr);
 
 		radio_api->filter(ieee802154_dev, true,
 				  IEEE802154_FILTER_TYPE_SHORT_ADDR,
@@ -491,6 +493,10 @@ static bool init_ieee802154(void)
 
 		/* Set ieee address */
 		filter.ieee_addr = mac_addr;
+		LOG_INF("Set ieee address %02x%02x%02x%02x%02x%02x%02x%02x",
+			mac_addr[0], mac_addr[1], mac_addr[2],
+			mac_addr[3], mac_addr[4], mac_addr[5],
+			mac_addr[6], mac_addr[7]);
 		radio_api->filter(ieee802154_dev, true,
 				  IEEE802154_FILTER_TYPE_IEEE_ADDR,
 				  &filter);
@@ -520,7 +526,7 @@ static bool init_ieee802154(void)
 
 int net_recv_data(struct net_if *iface, struct net_pkt *pkt)
 {
-	LOG_DBG("Received pkt %p, len %d", pkt, net_pkt_get_len(pkt));
+	LOG_INF("Received pkt %p, len %d", pkt, net_pkt_get_len(pkt));
 
 	k_fifo_put(&tx_queue, pkt);
 
