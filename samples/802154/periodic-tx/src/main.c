@@ -1,184 +1,120 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
-#include <zephyr/drivers/ieee802154.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/random/random.h>
-#include <stdio.h>
+#include <zephyr/net/ieee802154_radio.h>
 #include <string.h>
+#include <stdio.h>
 
 LOG_MODULE_REGISTER(wpan_direct_tx, LOG_LEVEL_INF);
 
-/* Use the default chosen 802.15.4 device */
 static const struct device *radio_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_ieee802154));
-
-static struct ieee802154_radio_api *radio_api;
+static const struct ieee802154_radio_api *radio_api;
 
 static uint8_t src_mac_addr[8];
-static uint8_t dst_mac_addr[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; /* Broadcast */
+static uint16_t pan_id = 0x1234;
+static uint8_t channel = 11;
 
 static uint32_t packet_counter = 0;
-static uint16_t pan_id = 0x1234; /* PAN ID */
-static uint8_t channel = 11; /* Channel 11-26 */
+static uint8_t seq_no = 0;
 
-/* IEEE 802.15.4 frame structure */
-struct ieee802154_frame {
-    uint8_t frame_control[2];
-    uint8_t sequence;
-    uint8_t dest_pan_id[2];
-    uint8_t dest_addr[8];
-    uint8_t src_addr[8];
-    uint8_t payload[];
-} __packed;
-
-static uint8_t *get_mac(const struct device *dev)
-{
+static uint8_t *get_mac(const struct device *dev) {
     src_mac_addr[7] = 0x00;
     src_mac_addr[6] = 0x12;
     src_mac_addr[5] = 0x4b;
     src_mac_addr[4] = 0x00;
-
     sys_rand_get(src_mac_addr, 4U);
-
-    /* Set local administration bit */
     src_mac_addr[0] = (src_mac_addr[0] & ~0x01) | 0x02;
-
     return src_mac_addr;
 }
 
-static bool init_radio(void)
-{
-    if (!device_is_ready(radio_dev)) {
-        LOG_ERR("Radio device not ready");
-        return false;
-    }
+static bool init_radio(void) {
+    if (!device_is_ready(radio_dev)) return false;
+    radio_api = (const struct ieee802154_radio_api *)radio_dev->api;
 
-    radio_api = (struct ieee802154_radio_api *)radio_dev->api;
-
-    /* Generate MAC address */
     get_mac(radio_dev);
 
-    /* Set channel */
-    if (radio_api->set_channel(radio_dev, channel) != 0) {
-        LOG_ERR("Failed to set channel %d", channel);
-        return false;
+    if (radio_api->set_channel(radio_dev, channel) != 0) return false;
+
+    enum ieee802154_hw_caps caps = radio_api->get_capabilities(radio_dev);
+    if (caps & IEEE802154_HW_FILTER) {
+        struct ieee802154_filter f = {0};
+        f.pan_id = pan_id;
+        (void)radio_api->filter(radio_dev, true, IEEE802154_FILTER_TYPE_PAN_ID, &f);
+
+        f.ieee_addr = src_mac_addr;
+        (void)radio_api->filter(radio_dev, true, IEEE802154_FILTER_TYPE_IEEE_ADDR, &f);
     }
 
-    /* Set PAN ID if supported */
-    if (IEEE802154_HW_FILTER & radio_api->get_capabilities(radio_dev)) {
-        struct ieee802154_filter filter = {0};
-        
-        filter.pan_id = pan_id;
-        filter.ieee_addr = src_mac_addr;
-        
-        radio_api->filter(radio_dev, true, IEEE802154_FILTER_TYPE_PAN_ID, &filter);
-        radio_api->filter(radio_dev, true, IEEE802154_FILTER_TYPE_IEEE_ADDR, &filter);
-    }
-
-    /* Start the radio */
-    if (radio_api->start(radio_dev) != 0) {
-        LOG_ERR("Failed to start radio");
-        return false;
-    }
-
+    if (radio_api->start(radio_dev) != 0) return false;
     return true;
 }
 
-static int create_802154_frame(uint8_t *buffer, size_t buffer_size, 
-                              const uint8_t *payload, size_t payload_len)
-{
-    if (buffer_size < (23 + payload_len)) { /* Minimum frame size + payload */
-        return -ENOMEM;
+static int create_802154_frame(uint8_t *buf, size_t buf_sz, const uint8_t *pl, size_t pl_len) {
+    /* Data frame, PAN ID Compression=1, Dest=short(0b10), Src=extended(0b11) => FCF: 0x41 0xC8 */
+    const uint8_t fcf0 = 0x41;
+    const uint8_t fcf1 = 0xC8;
+
+    const size_t hdr_len = 2 /*FCF*/ + 1 /*Seq*/ + 2 /*Dest PAN*/ + 2 /*Dest short*/ + 8 /*Src ext*/;
+    if (pl_len + hdr_len > 127 - 2) return -EMSGSIZE; /* exclude FCS (added by HW) */
+    if (buf_sz < hdr_len + pl_len) return -ENOMEM;
+
+    size_t off = 0;
+    buf[off++] = fcf0;
+    buf[off++] = fcf1;
+    buf[off++] = seq_no++;
+
+    buf[off++] = (uint8_t)(pan_id & 0xFF);
+    buf[off++] = (uint8_t)((pan_id >> 8) & 0xFF);
+
+    buf[off++] = 0xFF;
+    buf[off++] = 0xFF;
+
+    memcpy(&buf[off], src_mac_addr, 8);
+    off += 8;
+
+    if (pl_len) {
+        memcpy(&buf[off], pl, pl_len);
+        off += pl_len;
     }
 
-    size_t offset = 0;
-    
-    /* Frame Control Field (2 bytes) */
-    /* Frame Type: Data (001), Security: No, Frame Pending: No, AR: No, 
-       PAN ID Compression: No, Dest Addr Mode: Extended (11), Src Addr Mode: Extended (11) */
-    buffer[offset++] = 0x41; /* Frame control byte 1: 01000001 */
-    buffer[offset++] = 0xCC; /* Frame control byte 2: 11001100 */
-    
-    /* Sequence Number */
-    buffer[offset++] = packet_counter & 0xFF;
-    
-    /* Destination PAN ID (2 bytes, little endian) */
-    buffer[offset++] = pan_id & 0xFF;
-    buffer[offset++] = (pan_id >> 8) & 0xFF;
-    
-    /* Destination Address (8 bytes) - Broadcast */
-    memcpy(&buffer[offset], dst_mac_addr, 8);
-    offset += 8;
-    
-    /* Source Address (8 bytes) */
-    memcpy(&buffer[offset], src_mac_addr, 8);
-    offset += 8;
-    
-    /* Payload */
-    if (payload && payload_len > 0) {
-        memcpy(&buffer[offset], payload, payload_len);
-        offset += payload_len;
-    }
-    
-    return offset; /* Return total frame length */
+    return (int)off;
 }
 
-static int send_packet(void)
-{
-    uint8_t frame_buffer[127]; /* Maximum 802.15.4 frame size */
-    uint8_t payload[32];
-    int frame_len;
-    int ret;
+static int send_packet(void) {
+    uint8_t frame[127];
+    uint8_t payload[48];
 
-    /* Prepare payload with packet counter and timestamp */
-    int payload_len = snprintf(payload, sizeof(payload), 
-                              "PKT#%08u TIME:%u", packet_counter++, k_uptime_get_32());
+    int payload_len = snprintf((char *)payload, sizeof(payload),
+                               "PKT#%08u TIME:%u", packet_counter++, k_uptime_get_32());
+    if (payload_len < 0) return -EIO;
 
-    /* Create 802.15.4 frame */
-    frame_len = create_802154_frame(frame_buffer, sizeof(frame_buffer), 
-                                   payload, payload_len);
-    if (frame_len < 0) {
-        LOG_ERR("Failed to create frame: %d", frame_len);
-        return frame_len;
-    }
+    int flen = create_802154_frame(frame, sizeof(frame), payload, (size_t)payload_len);
+    if (flen < 0) return flen;
 
-    /* Transmit the frame directly through radio API */
-    ret = radio_api->tx(radio_dev, IEEE802154_TX_MODE_DIRECT, 
-                       frame_buffer, frame_len);
-    
+    int ret = radio_api->tx(radio_dev, IEEE802154_TX_MODE_CSMA_CA, frame, (size_t)flen);
     if (ret == 0) {
-        LOG_INF("Transmitted packet #%u (%d bytes): %s", 
-                packet_counter - 1, frame_len, payload);
+        LOG_INF("TX #%u len=%d \"%.*s\"", packet_counter - 1, flen, payload_len, payload);
     } else {
-        LOG_ERR("Transmission failed: %d", ret);
+        LOG_ERR("TX failed: %d", ret);
     }
-
     return ret;
 }
 
-int main(void)
-{
-    LOG_INF("Starting Direct IEEE 802.15.4 Transmitter");
-
+int main(void) {
+    LOG_INF("Starting 802.15.4 direct TX");
     if (!init_radio()) {
-        LOG_ERR("Failed to initialize radio");
+        LOG_ERR("Radio init failed");
         return -1;
     }
 
-    LOG_INF("Radio initialized on channel %d, PAN ID: 0x%04X", channel, pan_id);
-    LOG_INF("Source MAC: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
+    LOG_INF("Ch:%u PAN:0x%04x SRC:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
+            channel, pan_id,
             src_mac_addr[0], src_mac_addr[1], src_mac_addr[2], src_mac_addr[3],
             src_mac_addr[4], src_mac_addr[5], src_mac_addr[6], src_mac_addr[7]);
 
-    /* Main transmission loop - send 1 packet per second */
-    while (1) {
-        int ret = send_packet();
-        if (ret != 0) {
-            LOG_WRN("Packet transmission failed: %d", ret);
-        }
-
-        /* Wait 1 second before next transmission */
+    for (;;) {
+        (void)send_packet();
         k_sleep(K_SECONDS(1));
     }
-
-    return 0;
 }
