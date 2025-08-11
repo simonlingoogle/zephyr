@@ -1,0 +1,17 @@
+sample:
+  name: IEEE 802.15.4 Periodic Transmitter
+  description: Transmit IEEE 802.15.4 packets continuously at 1 Hz
+tests:
+  sample.802154.periodic_tx:
+    tags:
+      - ieee802154
+      - networking
+      - radio
+      - transmit
+    filter: dt_chosen_enabled("zephyr,ieee802154")
+    depends_on: ieee802154
+    harness: console
+    timeout: 30
+    integration_platforms:
+      - nrf52840dongle_nrf52840
+      - nrf52840dk_nrf52840
