@@ -94,26 +94,25 @@ static int send_packet(void) {
     int flen = create_802154_frame(frame, sizeof(frame), payload, (size_t)paylen);
     if (flen < 0) return flen;
 
-    // struct net_if *iface = net_if_lookup_by_dev(radio_dev);
-    // if (!iface) return -ENODEV;
+    struct net_if *iface = net_if_lookup_by_dev(radio_dev);
+    if (!iface) return -ENODEV;
 
-    // struct net_pkt *pkt = net_pkt_alloc_with_buffer(iface, (size_t)flen, AF_UNSPEC, 0, K_NO_WAIT);
-    // if (!pkt) return -ENOMEM;
+    struct net_pkt *pkt = net_pkt_alloc_with_buffer(iface, (size_t)flen, AF_UNSPEC, 0, K_NO_WAIT);
+    if (!pkt) return -ENOMEM;
 
-    // net_pkt_cursor_init(pkt);
-    // int rc = net_pkt_write(pkt, frame, (size_t)flen);
-    // if (rc) { net_pkt_unref(pkt); return rc; }
+    net_pkt_cursor_init(pkt);
+    int rc = net_pkt_write(pkt, frame, (size_t)flen);
+    if (rc) { net_pkt_unref(pkt); return rc; }
 
-    // int ret = radio_api->tx(radio_dev, IEEE802154_TX_MODE_CSMA_CA, pkt, pkt->buffer);
-    // net_pkt_unref(pkt);
+    int ret = radio_api->tx(radio_dev, IEEE802154_TX_MODE_CSMA_CA, pkt, pkt->buffer);
+    net_pkt_unref(pkt);
 
-    // if (!ret) {
-    //     LOG_INF("TX #%u len=%d \"%.*s\"", packet_counter - 1, flen, paylen, payload);
-    // } else {
-    //     LOG_ERR("TX failed: %d", ret);
-    // }
-	return 0;
-    // return ret;
+    if (!ret) {
+        LOG_INF("TX #%u len=%d \"%.*s\"", packet_counter - 1, flen, paylen, payload);
+    } else {
+        LOG_ERR("TX failed: %d", ret);
+    }
+    return ret;
 }
 
 int net_recv_data(struct net_if *iface, struct net_pkt *pkt)
