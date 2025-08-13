@@ -5,6 +5,7 @@
 #include <zephyr/net/ieee802154_radio.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_pkt.h>
+#include <zephyr/shell/shell.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -15,7 +16,7 @@ static const struct ieee802154_radio_api *radio_api;
 
 static uint8_t src_mac_addr[8];
 static uint16_t pan_id = 0x1234;
-static uint8_t channel = 11;
+static uint8_t channel = 19;
 
 static uint32_t packet_counter = 0;
 static uint8_t seq_no = 0;
