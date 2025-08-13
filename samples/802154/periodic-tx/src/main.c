@@ -8,8 +8,9 @@
 #include <zephyr/shell/shell.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-LOG_MODULE_REGISTER(wpan_periodic_tx, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(periodic_tx, LOG_LEVEL_INF);
 
 static const struct device *radio_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_ieee802154));
 static const struct ieee802154_radio_api *radio_api;
@@ -134,105 +135,105 @@ enum net_verdict ieee802154_handle_ack(struct net_if *iface, struct net_pkt *pkt
     return NET_CONTINUE;
 }
 
-// /* Shell commands for controlling the transmitter */
-// static int cmd_send_packet(const struct shell *sh, size_t argc, char **argv)
-// {
-//     ARG_UNUSED(argc);
-//     ARG_UNUSED(argv);
+/* Shell commands for controlling the transmitter */
+static int cmd_send_packet(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
     
-//     int ret = send_packet();
-//     if (ret == 0) {
-//         shell_print(sh, "Packet sent successfully");
-//     } else {
-//         shell_print(sh, "Failed to send packet: %d", ret);
-//     }
-//     return 0;
-// }
+    int ret = send_packet();
+    if (ret == 0) {
+        shell_print(sh, "Packet sent successfully");
+    } else {
+        shell_print(sh, "Failed to send packet: %d", ret);
+    }
+    return 0;
+}
 
-// static int cmd_set_channel(const struct shell *sh, size_t argc, char **argv)
-// {
-//     if (argc != 2) {
-//         shell_print(sh, "Usage: set_channel <11-26>");
-//         return -EINVAL;
-//     }
+static int cmd_set_channel(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc != 2) {
+        shell_print(sh, "Usage: set_channel <11-26>");
+        return -EINVAL;
+    }
     
-//     int new_channel = atoi(argv[1]);
-//     if (new_channel < 11 || new_channel > 26) {
-//         shell_print(sh, "Channel must be between 11 and 26");
-//         return -EINVAL;
-//     }
+    int new_channel = atoi(argv[1]);
+    if (new_channel < 11 || new_channel > 26) {
+        shell_print(sh, "Channel must be between 11 and 26");
+        return -EINVAL;
+    }
     
-//     if (radio_api->set_channel(radio_dev, new_channel) != 0) {
-//         shell_print(sh, "Failed to set channel");
-//         return -EIO;
-//     }
+    if (radio_api->set_channel(radio_dev, new_channel) != 0) {
+        shell_print(sh, "Failed to set channel");
+        return -EIO;
+    }
     
-//     channel = new_channel;
-//     shell_print(sh, "Channel set to %d", channel);
-//     return 0;
-// }
+    channel = new_channel;
+    shell_print(sh, "Channel set to %d", channel);
+    return 0;
+}
 
-// static int cmd_set_pan_id(const struct shell *sh, size_t argc, char **argv)
-// {
-//     if (argc != 2) {
-//         shell_print(sh, "Usage: set_pan_id <0x0000-0xFFFF>");
-//         return -EINVAL;
-//     }
+static int cmd_set_pan_id(const struct shell *sh, size_t argc, char **argv)
+{
+    if (argc != 2) {
+        shell_print(sh, "Usage: set_pan_id <0x0000-0xFFFF>");
+        return -EINVAL;
+    }
     
-//     uint16_t new_pan_id = strtoul(argv[1], NULL, 0);
+    uint16_t new_pan_id = strtoul(argv[1], NULL, 0);
     
-//     if (radio_api->get_capabilities(radio_dev) & IEEE802154_HW_FILTER) {
-//         struct ieee802154_filter f = {0};
-//         f.pan_id = new_pan_id;
-//         if (radio_api->filter(radio_dev, true, IEEE802154_FILTER_TYPE_PAN_ID, &f) != 0) {
-//             shell_print(sh, "Failed to set PAN ID filter");
-//             return -EIO;
-//         }
-//     }
+    if (radio_api->get_capabilities(radio_dev) & IEEE802154_HW_FILTER) {
+        struct ieee802154_filter f = {0};
+        f.pan_id = new_pan_id;
+        if (radio_api->filter(radio_dev, true, IEEE802154_FILTER_TYPE_PAN_ID, &f) != 0) {
+            shell_print(sh, "Failed to set PAN ID filter");
+            return -EIO;
+        }
+    }
     
-//     pan_id = new_pan_id;
-//     shell_print(sh, "PAN ID set to 0x%04x", pan_id);
-//     return 0;
-// }
+    pan_id = new_pan_id;
+    shell_print(sh, "PAN ID set to 0x%04x", pan_id);
+    return 0;
+}
 
-// static int cmd_show_status(const struct shell *sh, size_t argc, char **argv)
-// {
-//     ARG_UNUSED(argc);
-//     ARG_UNUSED(argv);
+static int cmd_show_status(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
     
-//     shell_print(sh, "=== IEEE 802.15.4 Transmitter Status ===");
-//     shell_print(sh, "Channel: %d", channel);
-//     shell_print(sh, "PAN ID: 0x%04x", pan_id);
-//     shell_print(sh, "Source MAC: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
-//                 src_mac_addr[0], src_mac_addr[1], src_mac_addr[2], src_mac_addr[3],
-//                 src_mac_addr[4], src_mac_addr[5], src_mac_addr[6], src_mac_addr[7]);
-//     shell_print(sh, "Packets sent: %u", packet_counter);
-//     shell_print(sh, "Current sequence: %u", seq_no);
-//     return 0;
-// }
+    shell_print(sh, "=== IEEE 802.15.4 Transmitter Status ===");
+    shell_print(sh, "Channel: %d", channel);
+    shell_print(sh, "PAN ID: 0x%04x", pan_id);
+    shell_print(sh, "Source MAC: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
+                src_mac_addr[0], src_mac_addr[1], src_mac_addr[2], src_mac_addr[3],
+                src_mac_addr[4], src_mac_addr[5], src_mac_addr[6], src_mac_addr[7]);
+    shell_print(sh, "Packets sent: %u", packet_counter);
+    shell_print(sh, "Current sequence: %u", seq_no);
+    return 0;
+}
 
-// static int cmd_reset_counter(const struct shell *sh, size_t argc, char **argv)
-// {
-//     ARG_UNUSED(argc);
-//     ARG_UNUSED(argv);
+static int cmd_reset_counter(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
     
-//     packet_counter = 0;
-//     seq_no = 0;
-//     shell_print(sh, "Packet counter and sequence number reset");
-//     return 0;
-// }
+    packet_counter = 0;
+    seq_no = 0;
+    shell_print(sh, "Packet counter and sequence number reset");
+    return 0;
+}
 
-// /* Shell command structure */
-// SHELL_STATIC_SUBCMD_SET_CREATE(sub_ieee802154,
-//     SHELL_CMD(send, NULL, "Send a single packet", cmd_send_packet),
-//     SHELL_CMD(channel, NULL, "Set channel (11-26)", cmd_set_channel),
-//     SHELL_CMD(pan_id, NULL, "Set PAN ID (hex)", cmd_set_pan_id),
-//     SHELL_CMD(status, NULL, "Show transmitter status", cmd_show_status),
-//     SHELL_CMD(reset, NULL, "Reset packet counter", cmd_reset_counter),
-//     SHELL_SUBCMD_SET_END
-// );
+/* Shell command structure */
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_tx,
+    SHELL_CMD(send, NULL, "Send a single packet", cmd_send_packet),
+    SHELL_CMD(channel, NULL, "Set channel (11-26)", cmd_set_channel),
+    SHELL_CMD(pan_id, NULL, "Set PAN ID (hex)", cmd_set_pan_id),
+    SHELL_CMD(status, NULL, "Show transmitter status", cmd_show_status),
+    SHELL_CMD(reset, NULL, "Reset packet counter", cmd_reset_counter),
+    SHELL_SUBCMD_SET_END
+);
 
-// SHELL_CMD_REGISTER(ieee802154, &sub_ieee802154, "IEEE 802.15.4 commands", NULL);
+SHELL_CMD_REGISTER(tx, &sub_tx, "IEEE 802.15.4 TX commands", NULL);
 
 int main(void) {
     LOG_INF("Starting 802.15.4 direct TX (no network stack)");
@@ -247,7 +248,7 @@ int main(void) {
             src_mac_addr[4], src_mac_addr[5], src_mac_addr[6], src_mac_addr[7]);
 
     for (;;) {
-        (void)send_packet();
+        // (void)send_packet();
         k_sleep(K_SECONDS(1));
     }
 }
