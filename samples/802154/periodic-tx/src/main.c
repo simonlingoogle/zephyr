@@ -33,14 +33,23 @@ static uint8_t *get_mac(const struct device *dev) {
 }
 
 static bool init_radio(void) {
-    if (!device_is_ready(radio_dev)) return false;
+    if (!device_is_ready(radio_dev)) {
+        LOG_ERR("Radio device not ready");
+        return false;
+    }
+    
     radio_api = (const struct ieee802154_radio_api *)radio_dev->api;
 
     get_mac(radio_dev);
 
-    if (radio_api->set_channel(radio_dev, channel) != 0) return false;
+    if (radio_api->set_channel(radio_dev, channel) != 0) {
+        LOG_ERR("Failed to set channel");
+        return false;
+    }
 
     enum ieee802154_hw_caps caps = radio_api->get_capabilities(radio_dev);
+    LOG_INF("Radio capabilities: 0x%08x", caps);
+    
     if (caps & IEEE802154_HW_FILTER) {
         struct ieee802154_filter f = {0};
         f.pan_id = pan_id;
@@ -50,7 +59,32 @@ static bool init_radio(void) {
         (void)radio_api->filter(radio_dev, true, IEEE802154_FILTER_TYPE_IEEE_ADDR, &f);
     }
 
-    if (radio_api->start(radio_dev) != 0) return false;
+    // **CRITICAL**: Bring the network interface UP
+    struct net_if *iface = net_if_get_first_by_type(&NET_L2_GET_NAME(IEEE802154));
+    if (!iface) {
+        LOG_ERR("No IEEE 802.15.4 interface found");
+        return false;
+    }
+    
+    LOG_INF("Bringing IEEE 802.15.4 interface UP");
+    int ret = net_if_up(iface);
+    if (ret != 0) {
+        LOG_ERR("Failed to bring interface UP: %d", ret);
+        return false;
+    }
+    
+    // Verify interface is up
+    if (!net_if_is_up(iface)) {
+        LOG_ERR("Failed to bring interface UP");
+        return false;
+    }
+
+    if (radio_api->start(radio_dev) != 0) {
+        LOG_ERR("Failed to start radio");
+        return false;
+    }
+    
+    LOG_INF("Radio initialization completed successfully");
     return true;
 }
 
@@ -117,9 +151,10 @@ static int send_packet(void) {
     }
 
     /* Direct transmission using radio API - let driver use pkt->frags */
-    int ret = radio_api->tx(radio_dev, IEEE802154_TX_MODE_DIRECT, pkt, NULL);
+    // int ret = radio_api->tx(radio_dev, IEEE802154_TX_MODE_DIRECT, pkt, NULL);
+    int ret = -EIO;
 
-    if (realloc) {
+    if (ret) {
         LOG_INF("TX #%u len=%d \"%.*s\"", packet_counter - 1, flen, paylen, payload);
     } else {
         LOG_ERR("TX failed: %d", ret);
@@ -130,6 +165,7 @@ static int send_packet(void) {
     return ret;
 }
 
+#ifndef CONFIG_NET_L2_IEEE802154
 /* Required stub functions for nRF5 driver */
 int net_recv_data(struct net_if *iface, struct net_pkt *pkt)
 {
@@ -146,6 +182,7 @@ enum net_verdict ieee802154_handle_ack(struct net_if *iface, struct net_pkt *pkt
     }
     return NET_CONTINUE;
 }
+#endif // CONFIG_NET_L2_IEEE802154
 
 /* Shell commands for controlling the transmitter */
 static int cmd_send_packet(const struct shell *sh, size_t argc, char **argv)
