@@ -94,7 +94,6 @@ struct tx_buffer {
 static int send_packet(void) {
     static uint8_t frame[127];
     uint8_t payload[48];
-    struct tx_buffer tx_buf;
 
     int paylen = snprintf((char *)payload, sizeof(payload),
                           "PKT#%08u TIME:%u", packet_counter++, k_uptime_get_32());
@@ -103,18 +102,31 @@ static int send_packet(void) {
     int flen = create_802154_frame(frame, sizeof(frame), payload, (size_t)paylen);
     if (flen < 0) return flen;
 
-    /* Prepare buffer for transmission */
-    tx_buf.data = frame;
-    tx_buf.len = flen;
+    /* Create proper network packet */
+    struct net_pkt *pkt = net_pkt_alloc_with_buffer(NULL, flen, AF_UNSPEC, 0, K_NO_WAIT);
+    if (!pkt) {
+        LOG_ERR("Failed to allocate packet");
+        return -ENOMEM;
+    }
 
-    /* Direct transmission using radio API */
-    int ret = radio_api->tx(radio_dev, IEEE802154_TX_MODE_CSMA_CA, NULL, (void*)&tx_buf);
+    /* Copy frame data to packet */
+    if (net_pkt_write(pkt, frame, flen) < 0) {
+        LOG_ERR("Failed to write to packet");
+        net_pkt_unref(pkt);
+        return -EIO;
+    }
 
-    if (!ret) {
+    /* Direct transmission using radio API - let driver use pkt->frags */
+    int ret = radio_api->tx(radio_dev, IEEE802154_TX_MODE_DIRECT, pkt, NULL);
+
+    if (realloc) {
         LOG_INF("TX #%u len=%d \"%.*s\"", packet_counter - 1, flen, paylen, payload);
     } else {
         LOG_ERR("TX failed: %d", ret);
+        /* Only unref on failure - driver handles success case */
+        net_pkt_unref(pkt);
     }
+    
     return ret;
 }
 
